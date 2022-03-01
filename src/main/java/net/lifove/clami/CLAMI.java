@@ -34,10 +34,8 @@ public class CLAMI {
 	String experimental;
 	String mlAlg="";
 
-	public static void main(String[] args) {
-		
-		new CLAMI().runner(args);
-		
+	public static void main(String[] args) {		
+		new CLAMI().runner(args);	
 	}
 
 	void runner(String[] args) {

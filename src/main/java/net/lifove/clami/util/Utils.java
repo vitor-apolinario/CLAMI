@@ -1,6 +1,7 @@
 package net.lifove.clami.util;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
@@ -8,6 +9,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 
 import org.apache.commons.math3.stat.StatUtils;
 
@@ -15,12 +18,19 @@ import com.google.common.primitives.Doubles;
 
 import weka.classifiers.Classifier;
 import weka.classifiers.evaluation.Evaluation;
+import weka.core.Attribute;
+import weka.core.Instance;
 import weka.core.Instances;
+import weka.core.converters.CSVLoader;
+import weka.core.converters.CSVSaver;
+import weka.core.converters.ConverterUtils.DataSink;
 import weka.filters.Filter;
 import weka.filters.unsupervised.attribute.Remove;
 import weka.filters.unsupervised.instance.RemoveRange;
 
 public class Utils {
+	
+	public static String dsName;
 	
 	
 	/**
@@ -74,6 +84,56 @@ public class Utils {
 			printEvaluationResult(TP, TN, FP, FN, experimental);
 		else if(suppress)
 			System.out.println("No labeled instances in the arff file. To see detailed prediction results, try again without the suppress option  (-s,--suppress)");
+
+		
+		String dsName = Utils.dsName;
+		Instances tokenizedInstances = Utils.loadArff("data/" + dsName + "-tokens.arff", "IsVulnerable");			
+		
+		tokenizedInstances.insertAttributeAt(new Attribute("crashes"), tokenizedInstances.numAttributes());
+		tokenizedInstances.insertAttributeAt(new Attribute("severity"), tokenizedInstances.numAttributes());
+
+		tokenizedInstances.renameAttribute(tokenizedInstances.attribute("tokens").index(), "sourcecode");
+				
+		
+		//add violation count as "crashes count"
+		for (int i=0; i < tokenizedInstances.numInstances(); i++) {
+			double kCount = instancesByCLA.get(i).value(instancesByCLA.attribute("K").index());			
+			
+			Instance currentInstance = tokenizedInstances.get(i);
+			
+			boolean isPositive = tokenizedInstances.classAttribute().indexOfValue(positiveLabel) == currentInstance.classValue();
+			
+			currentInstance.setValue(tokenizedInstances.attribute("crashes").index(), kCount);
+			currentInstance.setValue(tokenizedInstances.attribute("severity").index(), isPositive ? 1 : 0);
+		}
+
+		tokenizedInstances.setClassIndex(tokenizedInstances.attribute("severity").index());
+		tokenizedInstances.deleteAttributeAt(tokenizedInstances.attribute("IsVulnerable").index());
+				
+		Utils.writeCsv(tokenizedInstances, dsName + "-combine");
+					
+//		sortInstancesByViolation(instancesByCLA, positiveLabel);
+	}
+
+	public static void sortInstancesByViolation(Instances instancesByCLA, String positiveLabel) {
+		Instances copyInstances = new Instances(instancesByCLA);
+		
+		int K_index = copyInstances.attribute("K").index();
+		int L_index = copyInstances.attribute("realLabel").index();
+		copyInstances.sort(K_index);
+		
+		for (int i = 0; i < copyInstances.numInstances(); i++) {
+			int realLabelValue = (int) copyInstances.get(i).value(L_index);
+			System.out.println("K: " + copyInstances.get(i).value(K_index) + " L: " + copyInstances.attribute(L_index).value(realLabelValue));
+		}
+		
+		for (int i = copyInstances.numInstances() -1, j = 1; i > -1; i--, j++) {
+			int realLabelValue = (int) copyInstances.get(i).value(L_index);
+			if(realLabelValue == copyInstances.attribute(L_index).indexOfValue(positiveLabel)) {
+				System.out.println("#"+j);
+				break;
+			}		
+		}
 	}
 
 	/**
@@ -95,9 +155,9 @@ public class Utils {
 			System.out.println("TN: " + tN);
 			System.out.println("FN: " + fN);
 			
-			System.out.println("Precision: " + precision);
-			System.out.println("Recall: " + recall);
-			System.out.println("F1: " + f1);
+			System.out.println("Precision: " + String.valueOf(precision).replace(".", ","));
+			System.out.println("Recall: " + String.valueOf(recall).replace(".", ","));
+			System.out.println("F1: " + String.valueOf(f1).replace(".", ","));
 		}else{
 			System.out.print(precision + "," + recall + "," + f1);
 		}
@@ -120,7 +180,7 @@ public class Utils {
 		
 		// compute, K = the number of metrics whose values are greater than median, for each instance
 		Double[] K = new Double[instances.numInstances()];
-		
+			
 		for(int instIdx = 0; instIdx < instances.numInstances();instIdx++){
 			K[instIdx]=0.0;
 			for(int attrIdx = 0; attrIdx < instances.numAttributes();attrIdx++){
@@ -128,11 +188,39 @@ public class Utils {
 					continue;
 				
 				if(instances.get(instIdx).value(attrIdx) > cutoffsForHigherValuesOfAttribute[attrIdx]){
-					K[instIdx]++;
+					K[instIdx]++;					
 				}
-			}
+			}						
 		}
 		
+		List<String> labels = new ArrayList<>();		
+		labels.add(getNegLabel(instancesByCLA,positiveLabel));
+		labels.add(positiveLabel);
+		
+		instancesByCLA.insertAttributeAt(new Attribute("K"), instancesByCLA.numAttributes());	
+		instancesByCLA.insertAttributeAt(new Attribute("realLabel", labels), instancesByCLA.numAttributes());
+
+		String negativeLabel = "";
+		
+		switch (instancesByCLA.attribute(instancesByCLA.attribute("realLabel").index()).indexOfValue(positiveLabel)) {
+		case 0:
+			negativeLabel = instancesByCLA.attribute(instancesByCLA.attribute("realLabel").index()).value(1);
+			break;
+		case 1:
+			negativeLabel = instancesByCLA.attribute(instancesByCLA.attribute("realLabel").index()).value(0);
+			break;
+		default:
+			break;
+		}
+		
+		for (int i = 0; i < instancesByCLA.numInstances(); i++) {
+			instancesByCLA.get(i).setValue(instancesByCLA.attribute("K"), K[i]);
+							
+			boolean isPositive = instancesByCLA.classAttribute().indexOfValue(positiveLabel) == instances.get(i).classValue();
+					
+			instancesByCLA.get(i).setValue(instancesByCLA.attribute("realLabel"), isPositive ? positiveLabel : negativeLabel);
+		}
+			
 		// compute cutoff for the top half and bottom half clusters
 		double cutoffOfKForTopClusters = Utils.getMedian(new ArrayList<Double>(new HashSet<Double>(Arrays.asList(K))));
 		
@@ -142,9 +230,24 @@ public class Utils {
 			else
 				instancesByCLA.instance(instIdx).setClassValue(getNegLabel(instancesByCLA,positiveLabel));
 		}
+
 		return instancesByCLA;
 	}
-
+	
+	public static void writeCsv(Instances instancesToWrite, String dsName) {
+		CSVSaver saver = new CSVSaver();
+	    saver.setInstances(instancesToWrite);
+	    
+		try {
+			saver.setFile(new File("./data/out/" + dsName +".csv"));
+		    saver.writeBatch();
+		 }
+		catch (Exception e) {
+			System.err.println("Failed to save data to: " + dsName + ".csv");
+			e.printStackTrace();
+		}
+	}
+	
 	/**
 	 * Get higher value cutoffs for each attribute
 	 * @param instances
@@ -372,6 +475,7 @@ public class Utils {
 	 * @return Instances
 	 */
 	public static Instances loadArff(String path,String classAttributeName){
+		dsName=path.split("/")[1].replace(".arff", "");
 		Instances instances=null;
 		BufferedReader reader;
 		try {
