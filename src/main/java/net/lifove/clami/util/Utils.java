@@ -85,7 +85,17 @@ public class Utils {
 		else if(suppress)
 			System.out.println("No labeled instances in the arff file. To see detailed prediction results, try again without the suppress option  (-s,--suppress)");
 
+		if (!Utils.dsName.equals("mozilla-metrics")) {		
+			createCombineFeaturesFile(instancesByCLA, positiveLabel);
+			return;
+		}
 		
+		Utils.writeCsv(instancesByCLA, dsName + "-combine");
+					
+//		sortInstancesByViolation(instancesByCLA, positiveLabel);
+	}
+
+	public static void createCombineFeaturesFile(Instances instancesByCLA, String positiveLabel) {
 		String dsName = Utils.dsName;
 		Instances tokenizedInstances = Utils.loadArff("data/" + dsName + "-tokens.arff", "IsVulnerable");			
 		
@@ -111,8 +121,6 @@ public class Utils {
 		tokenizedInstances.deleteAttributeAt(tokenizedInstances.attribute("IsVulnerable").index());
 				
 		Utils.writeCsv(tokenizedInstances, dsName + "-combine");
-					
-//		sortInstancesByViolation(instancesByCLA, positiveLabel);
 	}
 
 	public static void sortInstancesByViolation(Instances instancesByCLA, String positiveLabel) {
@@ -193,6 +201,23 @@ public class Utils {
 			}						
 		}
 		
+		addTrueLabelAndViolationsCount(instances, instancesByCLA, positiveLabel, K);
+			
+		// compute cutoff for the top half and bottom half clusters
+		double cutoffOfKForTopClusters = Utils.getMedian(new ArrayList<Double>(new HashSet<Double>(Arrays.asList(K))));
+		
+		for(int instIdx = 0; instIdx < instances.numInstances(); instIdx++){
+			if(K[instIdx]>cutoffOfKForTopClusters)
+				instancesByCLA.instance(instIdx).setClassValue(positiveLabel);
+			else
+				instancesByCLA.instance(instIdx).setClassValue(getNegLabel(instancesByCLA,positiveLabel));
+		}
+
+		return instancesByCLA;
+	}
+
+	public static void addTrueLabelAndViolationsCount(Instances instances, Instances instancesByCLA,
+			String positiveLabel, Double[] violationsCount) {
 		List<String> labels = new ArrayList<>();		
 		labels.add(getNegLabel(instancesByCLA,positiveLabel));
 		labels.add(positiveLabel);
@@ -214,24 +239,12 @@ public class Utils {
 		}
 		
 		for (int i = 0; i < instancesByCLA.numInstances(); i++) {
-			instancesByCLA.get(i).setValue(instancesByCLA.attribute("K"), K[i]);
+			instancesByCLA.get(i).setValue(instancesByCLA.attribute("K"), violationsCount[i]);
 							
-			boolean isPositive = instancesByCLA.classAttribute().indexOfValue(positiveLabel) == instances.get(i).classValue();
+			boolean isPositive = instancesByCLA.classAttribute().indexOfValue(positiveLabel) == (int) instances.get(i).classValue();
 					
 			instancesByCLA.get(i).setValue(instancesByCLA.attribute("realLabel"), isPositive ? positiveLabel : negativeLabel);
 		}
-			
-		// compute cutoff for the top half and bottom half clusters
-		double cutoffOfKForTopClusters = Utils.getMedian(new ArrayList<Double>(new HashSet<Double>(Arrays.asList(K))));
-		
-		for(int instIdx = 0; instIdx < instances.numInstances(); instIdx++){
-			if(K[instIdx]>cutoffOfKForTopClusters)
-				instancesByCLA.instance(instIdx).setClassValue(positiveLabel);
-			else
-				instancesByCLA.instance(instIdx).setClassValue(getNegLabel(instancesByCLA,positiveLabel));
-		}
-
-		return instancesByCLA;
 	}
 	
 	public static void writeCsv(Instances instancesToWrite, String dsName) {
