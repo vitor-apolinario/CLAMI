@@ -90,7 +90,7 @@ public class Utils {
 			return;
 		}
 		
-		Utils.writeCsv(instancesByCLA, dsName + "-combine");
+		Utils.writeCsv(instancesByCLA, dsName + "-cla");
 					
 //		sortInstancesByViolation(instancesByCLA, positiveLabel);
 	}
@@ -201,7 +201,7 @@ public class Utils {
 			}						
 		}
 		
-		addTrueLabelAndViolationsCount(instances, instancesByCLA, positiveLabel, K);
+		addViolationsCount(instancesByCLA, K);
 			
 		// compute cutoff for the top half and bottom half clusters
 		double cutoffOfKForTopClusters = Utils.getMedian(new ArrayList<Double>(new HashSet<Double>(Arrays.asList(K))));
@@ -216,34 +216,11 @@ public class Utils {
 		return instancesByCLA;
 	}
 
-	public static void addTrueLabelAndViolationsCount(Instances instances, Instances instancesByCLA,
-			String positiveLabel, Double[] violationsCount) {
-		List<String> labels = new ArrayList<>();		
-		labels.add(getNegLabel(instancesByCLA,positiveLabel));
-		labels.add(positiveLabel);
-		
-		instancesByCLA.insertAttributeAt(new Attribute("K"), instancesByCLA.numAttributes());	
-		instancesByCLA.insertAttributeAt(new Attribute("realLabel", labels), instancesByCLA.numAttributes());
+	public static void addViolationsCount(Instances instancesByCLA, Double[] violationsCount) {		
+		instancesByCLA.insertAttributeAt(new Attribute("K"), instancesByCLA.numAttributes());
 
-		String negativeLabel = "";
-		
-		switch (instancesByCLA.attribute(instancesByCLA.attribute("realLabel").index()).indexOfValue(positiveLabel)) {
-		case 0:
-			negativeLabel = instancesByCLA.attribute(instancesByCLA.attribute("realLabel").index()).value(1);
-			break;
-		case 1:
-			negativeLabel = instancesByCLA.attribute(instancesByCLA.attribute("realLabel").index()).value(0);
-			break;
-		default:
-			break;
-		}
-		
 		for (int i = 0; i < instancesByCLA.numInstances(); i++) {
 			instancesByCLA.get(i).setValue(instancesByCLA.attribute("K"), violationsCount[i]);
-							
-			boolean isPositive = instancesByCLA.classAttribute().indexOfValue(positiveLabel) == (int) instances.get(i).classValue();
-					
-			instancesByCLA.get(i).setValue(instancesByCLA.attribute("realLabel"), isPositive ? positiveLabel : negativeLabel);
 		}
 	}
 	
